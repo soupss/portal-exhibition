@@ -176,13 +176,17 @@ mat2x3 get_portal(int world) {
 
     // so it's hardcoded
 
-    if (world == WORLD_SUB_FRACTAL) {
-        pos = vec3(-10.0, 4.0, 0.0);
-        n = vec3(1.0, 0.0, 0.0);
-    }
-    else if (world == WORLD_SUB_LAVALAMP) {
+    if (world == WORLD_SUB_LAVALAMP) {
         pos = vec3(10.0, 4.0, 0.0);
         n = vec3(-1.0, 0.0, 0.0);
+    }
+    else if (world == WORLD_SUB_FRACTAL) {
+        pos = vec3(-5.0, 4.0, 8.660254);
+        n = vec3(0.5, 0.0, -0.8660254);
+    }
+    else if (world == WORLD_SUB_WATER) {
+        pos = vec3(-5.0, 4.0, -8.660254);
+        n = vec3(0.5, 0.0, 0.8660254);
     }
     else {
         pos = vec3(0.0);
@@ -242,6 +246,7 @@ int get_world() {
 
 vec3 get_bg(int world) {
     if (world == WORLD_HUB) return vec3(1.0);
+    else if (world == WORLD_SUB_WATER) return vec3(0.53, 0.81, 0.92);
     else return vec3(0.0);
 }
 
@@ -279,6 +284,18 @@ Hit map_hub_p(vec3 p) {
         float d = sd_portal(q, portal_n);
         Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
         hit = u_op(hit, Hit(d, m, WORLD_SUB_LAVALAMP));
+    }
+
+    {
+        // portal to water world
+        mat2x3 portal = get_portal(WORLD_SUB_WATER);
+        vec3 portal_pos = portal[0];
+        vec3 portal_n = portal[1];
+
+        vec3 q = p - portal_pos;
+        float d = sd_portal(q, portal_n);
+        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
+        hit = u_op(hit, Hit(d, m, WORLD_SUB_WATER));
     }
     return hit;
 }
@@ -453,11 +470,49 @@ Hit map_lavalamp_p(vec3 p) {
     return hit;
 }
 
+Hit map_water_s(vec3 p) {
+    Hit hit;
+    hit.world_target = NULL;
+
+    p.y += 10.0;
+    {
+        vec3 q = p;
+        float freq = 1.0/5.0;
+        float amp = 5.0;
+        for (int i = 0; i < 3; i++) {
+            freq *= 1.5;
+            amp /= 1.5;
+            q.y += amp*sin(u.t + freq*q.x);
+        }
+
+        hit.d = sd_plane(q, vec3(0.0, 1.0, 0.0));
+        hit.d *= 0.3;
+        hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(0.0, 0.0, 1.0), 0.4, 0.8);
+    }
+    return hit;
+}
+
+Hit map_water_p(vec3 p) {
+    Hit hit = map_water_s(p);
+    {
+        mat2x3 portal = get_portal(WORLD_SUB_WATER);
+        vec3 portal_pos = portal[0]; //TODO: pos
+        vec3 portal_n = -portal[1];
+
+        vec3 q = p - portal_pos;
+        float d = sd_portal(q, portal_n);
+        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
+        hit = u_op(hit, Hit(d, m, WORLD_HUB));
+    }
+    return hit;
+}
+
 // map for secondary (and primary) rays
 Hit map_secondary(vec3 p) {
     if (world_ray == WORLD_HUB) return map_hub_s(p);
     else if (world_ray == WORLD_SUB_FRACTAL) return map_fractal_s(p);
     else if (world_ray == WORLD_SUB_LAVALAMP) return map_lavalamp_s(p);
+    else if (world_ray == WORLD_SUB_WATER) return map_water_s(p);
     else return NULL_HIT;
 }
 
@@ -466,6 +521,7 @@ Hit map_primary(vec3 p) {
     if (world_ray == WORLD_HUB) return map_hub_p(p);
     else if (world_ray == WORLD_SUB_FRACTAL) return map_fractal_p(p);
     else if (world_ray == WORLD_SUB_LAVALAMP) return map_lavalamp_p(p);
+    else if (world_ray == WORLD_SUB_WATER) return map_water_p(p);
     else return NULL_HIT;
 }
 
