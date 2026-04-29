@@ -555,8 +555,12 @@ Hit march(vec3 ro, vec3 rd) {
 
         d += abs(hit.d);
         if (d > DIST_MAX) break;
-
+        is++;
     }
+
+#ifdef DEBUG
+    d = is;
+#endif
 
     return Hit(d, hit.material, hit.world_target);
 }
@@ -698,6 +702,9 @@ void main() {
 
     Hit hit = march(ro, rd);
 
+#ifdef DEBUG
+    vec3 color = vec3(hit.d/STEPS_MAX);
+#else
     vec3 color_bg = get_bg(world_ray);
     vec3 color = color_bg;
 
