@@ -1,6 +1,6 @@
 #version 450
 
-// #define DEBUG
+#define DEBUG
 
 #define NULL -1
 
@@ -532,15 +532,20 @@ Hit map_primary(vec3 p) {
 Hit march(vec3 ro, vec3 rd) {
     float d = 0.0;
     Hit hit;
+    float r_prev = 0.0;
+    float omega = 1.6;
+    float step = 0.0;
 
     float is = 0.0;
-
     for (int i = 0; i < STEPS_MAX; i++) {
         vec3 p = ro + d * rd;
         hit = map_primary(p);
+        is++;
+
+        float r = hit.d;
 
         float threshold = 0.001 + (d * 0.0002);
-        if (abs(hit.d) < threshold) {
+        if (abs(r) < threshold) {
             if (hit.material.type == MATERIAL_TYPE_PORTAL) {
                 world_ray = hit.world_target;
                 vec3 n = get_portal(world_ray)[1];
@@ -548,14 +553,29 @@ Hit march(vec3 ro, vec3 rd) {
                 a = max(a, 0.0005);
 
                 d += 0.1 / a;
+                step = 0.0;
+                r_prev = 0.0;
+
                 continue;
             }
             break;
         }
 
-        d += abs(hit.d);
+        bool overstep = r + r_prev < step;
+        if (overstep) {
+            d -= step;
+            step = r_prev;
+            if (omega > 1.0) omega *= 0.9;
+            else omega = 1.0;
+        }
+        else {
+            step = r * omega;
+            r_prev = r;
+        }
+
+        d += abs(step);
+
         if (d > DIST_MAX) break;
-        is++;
     }
 
 #ifdef DEBUG
