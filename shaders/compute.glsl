@@ -1,6 +1,6 @@
 #version 450
 
-#define DEBUG
+//#define DEBUG
 
 #define NULL -1
 
@@ -529,6 +529,7 @@ Hit map_primary(vec3 p) {
 // engine //
 ////////////
 
+// TODO: change d to t
 Hit march(vec3 ro, vec3 rd) {
     float d = 0.0;
     Hit hit;
@@ -562,11 +563,10 @@ Hit march(vec3 ro, vec3 rd) {
         }
 
         bool overstep = r + r_prev < step;
-        if (overstep) {
+        if (omega > 1.0 && overstep) {
             d -= step;
             step = r_prev;
-            if (omega > 1.0) omega *= 0.9;
-            else omega = 1.0;
+            omega = 1.0;
         }
         else {
             step = r * omega;
