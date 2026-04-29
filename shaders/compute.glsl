@@ -1,5 +1,32 @@
 #version 450
 
+// #define DEBUG
+
+#define NULL -1
+
+#define WORLD_HUB 0
+#define WORLD_SUB_FRACTAL 1
+#define WORLD_SUB_LAVALAMP 2
+#define WORLD_SUB_WATER 3
+
+#define NUM_PORTALS 3
+
+const int SUB_WORLDS[NUM_PORTALS] = {
+    WORLD_SUB_LAVALAMP,
+    WORLD_SUB_FRACTAL,
+    WORLD_SUB_WATER
+};
+
+#define MATERIAL_TYPE_OPAQUE 0
+#define MATERIAL_TYPE_PORTAL 1
+
+#define PI 3.1415926535897932384626433832795
+#define DIST_MAX 350
+#define STEPS_MAX 256
+
+#define PORTAL_WIDTH 2.3
+#define PORTAL_HEIGHT 3.7
+
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(rgba8, set = 0, binding = 0) uniform writeonly image2D rendertarget;
@@ -24,28 +51,6 @@ layout(set = 1, binding = 0, std140) uniform frame {
     Camera camera;
     vec3 camera_pos_prev;
 } u;
-
-#define NULL -1
-
-#define WORLD_HUB 0
-#define WORLD_SUB_FRACTAL 1
-#define WORLD_SUB_LAVALAMP 2
-
-#define NUM_PORTALS 2
-
-const int SUB_WORLDS[NUM_PORTALS] = {
-    WORLD_SUB_LAVALAMP,
-    WORLD_SUB_FRACTAL
-};
-
-#define MATERIAL_TYPE_OPAQUE 0
-#define MATERIAL_TYPE_PORTAL 1
-
-#define PI 3.1415926535897932384626433832795
-#define DIST_MAX 100
-
-#define PORTAL_WIDTH 2.3
-#define PORTAL_HEIGHT 3.7
 
 struct Material {
     int type;
@@ -221,7 +226,6 @@ bool portal_entered(int world) {
 
 // get world camera is in
 int get_world() {
-    vec3 n = vec3(0.0, 0.0, 1.0);
     if (world_global == WORLD_HUB) {
         for (int i = 0; i < NUM_PORTALS; i++) {
             int world = SUB_WORLDS[i];
@@ -295,16 +299,16 @@ Hit map_fractal_s(vec3 p) {
     hit.world_target = NULL;
     {
         hit.d = sd_plane(q, vec3(0.0, 1.0, 0.0));
-        hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(0.0, 0.0, 1.0), 0.0, 0.0);
+        hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(1.0, 0.0, 0.0), 0.0, 0.0);
     }
 
     {
         vec3 q = q - vec3(0.0, 3.5 + 0.35*sin(0.8*u.t), -18.0);
 
         float s = 11.0;
-        float id = round(q.x/s);
-        if (id < 0 || id > 10) return hit;
-        q.x = q.x - s*round(q.x/s);
+        vec2 id = round(q.xy/s);
+        if (id.y < 0 || id.y > 10) return hit;
+        q.xy = q.xy - s*round(id);
 
         q.xz *= rotate_2d(0.1 * u.t);
         q.yz *= rotate_2d(0.05 * u.t);
@@ -324,7 +328,7 @@ Hit map_fractal_s(vec3 p) {
             float scale = 2.0;
             float scaled = 1.0;
             vec4 trap = vec4(1e10);
-            for (int i = 0; i < id; i++) {
+            for (int i = 0; i < id.y; i++) {
                 q = abs(q);
                 q -= vec3(1.0, 0.4, 0.7);
                 q.xz *= rot_xz;
@@ -366,6 +370,7 @@ Hit map_fractal_p(vec3 p) {
 vec3 g_blub_pos[BLUBS];
 float g_blub_r[BLUBS];
 
+// todo: use fract() instead of sin for periodicity
 void precalculate_blobs() {
     float world_height = 20.0;
     float y = world_height/2.0 + world_height * 0.7 * sin(2.0*PI*hash(u.t_start) + u.t * 0.6);
@@ -388,12 +393,12 @@ void precalculate_blobs() {
 }
 
 Hit map_lavalamp_s(vec3 p) {
+    Hit hit;
+    hit.world_target = NULL;
+
     float world_height = 20.0;
     p.y += 4.0;
     p.x -= 35.0;
-
-    Hit hit;
-    hit.world_target = NULL;
     // floor
     {
         hit.d = sd_plane(p, vec3(0.0, 1.0, 0.0));
@@ -472,7 +477,9 @@ Hit march(vec3 ro, vec3 rd) {
     float d = 0.0;
     Hit hit;
 
-    for (int i = 0; i < 256; i++) {
+    float is = 0.0;
+
+    for (int i = 0; i < STEPS_MAX; i++) {
         vec3 p = ro + d * rd;
         hit = map_primary(p);
 
@@ -481,9 +488,10 @@ Hit march(vec3 ro, vec3 rd) {
             if (hit.material.type == MATERIAL_TYPE_PORTAL) {
                 world_ray = hit.world_target;
                 vec3 n = get_portal(world_ray)[1];
-                float a = max(abs(dot(n, rd)), 0.05);
+                float a = abs(dot(n, rd));
+                a = max(a, 0.0005);
 
-                d += 0.1 / a; // bigger jump at steeper angles
+                d += 0.1 / a;
                 continue;
             }
             break;
