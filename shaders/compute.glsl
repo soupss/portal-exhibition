@@ -728,10 +728,14 @@ void main() {
         color = direct + ambient;
     }
 
-    float fog_factor = smoothstep(DIST_MAX * 0.7, DIST_MAX, hit.d);
+    float fog_factor = smoothstep(DIST_MAX * 0.9, DIST_MAX, hit.d);
     color = mix(color, color_bg, fog_factor);
 
     color = pow(color, vec3(1.0 / 2.2)); // gamma correction
 
+    // dithering to reduce color banding
+    float noise = hash12(uv + u.t) * 2.0 - 1.0;
+    color += noise * (1.0 / 255.0);
+#endif
     imageStore(rendertarget, ivec2(x, y), vec4(color, 1.0));
 }
