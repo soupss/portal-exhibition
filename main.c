@@ -57,6 +57,9 @@ typedef struct {
     WGPUSurface surface;
     WGPUTextureFormat surface_format;
 
+    WGPUPipelineLayout pll_compute;
+    WGPUPipelineLayout pll_render;
+
     WGPUComputePipeline pl_compute;
     WGPURenderPipeline pl_render;
 
@@ -65,6 +68,8 @@ typedef struct {
     WGPUBindGroup bg_render;
     WGPUBindGroup bg_uniform;
 } State;
+
+State *global_state; // needed for hot reload
 
 float vec3_length(Vec3 v) {
     return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
@@ -204,6 +209,103 @@ char* load_shader(const char* filename) {
     }
     fclose(file);
     return buffer;
+}
+
+EMSCRIPTEN_KEEPALIVE void build_pipelines() {
+    State *s = global_state;
+    // load shaders
+    char* code_compute = load_shader("shaders/compute.wgsl");
+    char* code_vertex = load_shader("shaders/vertex.wgsl");
+    char* code_fragment = load_shader("shaders/fragment.wgsl");
+
+    if (!code_compute || !code_vertex || !code_fragment) {
+        printf("One or more shader files failed to load!\n");
+        if (code_compute) free(code_compute);
+        if (code_vertex) free(code_vertex);
+        if (code_fragment) free(code_fragment);
+        return;
+    }
+
+    WGPUShaderModuleWGSLDescriptor sm_c_wgsl = {
+        .chain.sType = WGPUSType_ShaderModuleWGSLDescriptor,
+        .code = code_compute
+    };
+    WGPUShaderModuleDescriptor sm_c_desc = {
+        .nextInChain = (const WGPUChainedStruct*)&sm_c_wgsl
+    };
+    WGPUShaderModule sm_compute = wgpuDeviceCreateShaderModule(s->device, &sm_c_desc);
+
+    WGPUShaderModuleWGSLDescriptor sm_v_wgsl = {
+        .chain.sType = WGPUSType_ShaderModuleWGSLDescriptor,
+        .code = code_vertex
+    };
+    WGPUShaderModuleDescriptor sm_v_desc = {
+        .nextInChain = (const WGPUChainedStruct*)&sm_v_wgsl
+    };
+    WGPUShaderModule sm_vertex = wgpuDeviceCreateShaderModule(s->device, &sm_v_desc);
+
+    WGPUShaderModuleWGSLDescriptor sm_f_wgsl = {
+        .chain.sType = WGPUSType_ShaderModuleWGSLDescriptor,
+        .code = code_fragment
+    };
+    WGPUShaderModuleDescriptor sm_f_desc = {
+        .nextInChain = (const WGPUChainedStruct*)&sm_f_wgsl
+    };
+    WGPUShaderModule sm_fragment = wgpuDeviceCreateShaderModule(s->device, &sm_f_desc);
+
+    free(code_compute);
+    free(code_vertex);
+    free(code_fragment);
+
+    if(s->pl_compute) wgpuComputePipelineRelease(s->pl_compute);
+    if(s->pl_render) wgpuRenderPipelineRelease(s->pl_render);
+
+    // create compute pipeline
+    WGPUComputePipelineDescriptor pl_c_desc = {
+        .layout = s->pll_compute,
+        .compute = {
+            .module = sm_compute,
+            .entryPoint = "main"
+        }
+    };
+    s->pl_compute = wgpuDeviceCreateComputePipeline(s->device, &pl_c_desc);
+
+    // create render pipeline
+    WGPUColorTargetState color_target = {
+        .format = s->surface_format,
+        .blend = NULL,
+        .writeMask = WGPUColorWriteMask_All
+    };
+    WGPUFragmentState fragment_state = {
+        .module = sm_fragment,
+        .entryPoint = "main",
+        .targetCount = 1,
+        .targets = &color_target
+    };
+
+    WGPURenderPipelineDescriptor pl_r_desc = {
+        .layout = s->pll_render,
+        .vertex = {
+            .module = sm_vertex,
+            .entryPoint = "main",
+            .bufferCount = 0
+        },
+        .fragment = &fragment_state,
+        .primitive = {
+            .topology = WGPUPrimitiveTopology_TriangleList
+        },
+        .multisample = {
+            .count = 1,
+            .mask = 0xFFFFFFFF
+        }
+    };
+    s->pl_render = wgpuDeviceCreateRenderPipeline(s->device, &pl_r_desc);
+
+    wgpuShaderModuleRelease(sm_compute);
+    wgpuShaderModuleRelease(sm_vertex);
+    wgpuShaderModuleRelease(sm_fragment);
+
+    printf("Pipelines build successful\n");
 }
 
 void loop(void* userdata) {
@@ -391,7 +493,7 @@ void on_device_request(WGPURequestDeviceStatus status, WGPUDevice device, const 
         .bindGroupLayoutCount = 2,
         .bindGroupLayouts = bgls_compute
     };
-    WGPUPipelineLayout pll_compute = wgpuDeviceCreatePipelineLayout(s->device, &pll_c_desc);
+    s->pll_compute = wgpuDeviceCreatePipelineLayout(s->device, &pll_c_desc);
 
     WGPUBindGroupLayout bgls_render[2] = {
         bgl_render,
@@ -401,89 +503,9 @@ void on_device_request(WGPURequestDeviceStatus status, WGPUDevice device, const 
         .bindGroupLayoutCount = 2,
         .bindGroupLayouts = bgls_render
     };
-    WGPUPipelineLayout pll_render = wgpuDeviceCreatePipelineLayout(s->device, &pll_r_desc);
+    s->pll_render = wgpuDeviceCreatePipelineLayout(s->device, &pll_r_desc);
 
-    // load shaders
-    char* code_compute = load_shader("shaders/compute.wgsl");
-    char* code_vertex = load_shader("shaders/vertex.wgsl");
-    char* code_fragment = load_shader("shaders/fragment.wgsl");
-
-    if (!code_compute || !code_vertex || !code_fragment) {
-        printf("One or more shader files failed to load!\n");
-        return;
-    }
-
-    WGPUShaderModuleWGSLDescriptor sm_c_wgsl = {
-        .chain.sType = WGPUSType_ShaderModuleWGSLDescriptor,
-        .code = code_compute
-    };
-    WGPUShaderModuleDescriptor sm_c_desc = {
-        .nextInChain = (const WGPUChainedStruct*)&sm_c_wgsl
-    };
-    WGPUShaderModule sm_compute = wgpuDeviceCreateShaderModule(s->device, &sm_c_desc);
-
-    WGPUShaderModuleWGSLDescriptor sm_v_wgsl = {
-        .chain.sType = WGPUSType_ShaderModuleWGSLDescriptor,
-        .code = code_vertex
-    };
-    WGPUShaderModuleDescriptor sm_v_desc = {
-        .nextInChain = (const WGPUChainedStruct*)&sm_v_wgsl
-    };
-    WGPUShaderModule sm_vertex = wgpuDeviceCreateShaderModule(s->device, &sm_v_desc);
-
-    WGPUShaderModuleWGSLDescriptor sm_f_wgsl = {
-        .chain.sType = WGPUSType_ShaderModuleWGSLDescriptor,
-        .code = code_fragment
-    };
-    WGPUShaderModuleDescriptor sm_f_desc = {
-        .nextInChain = (const WGPUChainedStruct*)&sm_f_wgsl
-    };
-    WGPUShaderModule sm_fragment = wgpuDeviceCreateShaderModule(s->device, &sm_f_desc);
-
-    free(code_compute);
-    free(code_vertex);
-    free(code_fragment);
-
-    // create compute pipeline
-    WGPUComputePipelineDescriptor pl_c_desc = {
-        .layout = pll_compute,
-        .compute = {
-            .module = sm_compute,
-            .entryPoint = "main"
-        }
-    };
-    s->pl_compute = wgpuDeviceCreateComputePipeline(s->device, &pl_c_desc);
-
-    // create render pipeline
-    WGPUColorTargetState color_target = {
-        .format = s->surface_format,
-        .blend = NULL,
-        .writeMask = WGPUColorWriteMask_All
-    };
-    WGPUFragmentState fragment_state = {
-        .module = sm_fragment,
-        .entryPoint = "main",
-        .targetCount = 1,
-        .targets = &color_target
-    };
-
-    WGPURenderPipelineDescriptor pl_r_desc = {
-        .layout = pll_render,
-        .vertex = {
-            .module = sm_vertex,
-            .entryPoint = "main",
-            .bufferCount = 0
-        },
-        .fragment = &fragment_state,
-        .primitive = {
-            .topology = WGPUPrimitiveTopology_TriangleList
-        },
-        .multisample = {
-            .count = 1,
-            .mask = 0xFFFFFFFF
-        }
-    };
-    s->pl_render = wgpuDeviceCreateRenderPipeline(s->device, &pl_r_desc);
+    build_pipelines();
 
     // create rendertarget texture
     WGPUTextureDescriptor t_rendertarget_desc = {
@@ -635,6 +657,7 @@ int main() {
 
     State* s = (State*)malloc(sizeof(State));
     memset(s, 0, sizeof(State));
+    global_state = s;
 
     double t_start_sec = emscripten_date_now()/1000.0;
     s->t_start = (float)fmod(t_start_sec, 10000);

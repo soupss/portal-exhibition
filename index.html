@@ -1,15 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Project</title>
-    <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-    </style>
-</head>
-<body>
-    <canvas id="canvas"></canvas>
-    <script src="main.js"></script>
-</body>
+    <head>
+        <meta charset="UTF-8">
+        <title>Project</title>
+        <style>
+body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+canvas { display: block; width: 100vw; height: 100vh; }
+        </style>
+    </head>
+    <body>
+        <canvas id="canvas"></canvas>
+        <script>
+            var Module = {
+                onRuntimeInitialized: function() {
+                    const ws = new WebSocket('ws://localhost:3000');
+
+                    ws.onmessage = async (event) => {
+                        if (event.data.trim() === 'shader_updated') {
+                            console.log("Downloading new shaders...");
+
+                            const c_res = await fetch('shaders/compute.wgsl?cb=' + Date.now());
+                            const v_res = await fetch('shaders/vertex.wgsl?cb=' + Date.now());
+                            const f_res = await fetch('shaders/fragment.wgsl?cb=' + Date.now());
+
+                            FS.writeFile('shaders/compute.wgsl', await c_res.text());
+                            FS.writeFile('shaders/vertex.wgsl', await v_res.text());
+                            FS.writeFile('shaders/fragment.wgsl', await f_res.text());
+
+                            Module.ccall('build_pipelines', null, [], []);
+                        }
+                    };
+                }
+            };
+        </script>
+        <script src="main.js"></script>
+    </body>
 </html>
