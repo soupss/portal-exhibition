@@ -1,6 +1,6 @@
 #version 450
 
-//#define DEBUG
+// #define DEBUG
 
 #define NULL -1
 
@@ -21,7 +21,7 @@ const int SUB_WORLDS[NUM_PORTALS] = {
 #define MATERIAL_TYPE_PORTAL 1
 
 #define PI 3.1415926535897932384626433832795
-#define DIST_MAX 350
+#define D_MAX 150
 #define STEPS_MAX 256
 
 #define PORTAL_WIDTH 2.3
@@ -534,8 +534,15 @@ Hit march(vec3 ro, vec3 rd) {
     float d = 0.0;
     Hit hit;
     float r_prev = 0.0;
-    float omega = 1.6;
+    float omega = 1.2;
     float step = 0.0;
+
+    float d_candidate = 0.0;
+    float error_candidate = 1e8;
+    Material material_candidate = Material(MATERIAL_TYPE_OPAQUE, vec3(0.0), 0.0, 0.0);
+    int target_candidate = NULL;
+
+    float r_pixel = 1.0/u.resolution.y;
 
     float is = 0.0;
     for (int i = 0; i < STEPS_MAX; i++) {
@@ -546,24 +553,21 @@ Hit march(vec3 ro, vec3 rd) {
         float r = hit.d;
 
         float threshold = 0.001 + (d * 0.0002);
-        if (abs(r) < threshold) {
-            if (hit.material.type == MATERIAL_TYPE_PORTAL) {
-                world_ray = hit.world_target;
-                vec3 n = get_portal(world_ray)[1];
-                float a = abs(dot(n, rd));
-                a = max(a, 0.0005);
+        if (abs(r) < threshold && hit.material.type == MATERIAL_TYPE_PORTAL) {
+            world_ray = hit.world_target;
+            vec3 n = get_portal(world_ray)[1];
+            float a = abs(dot(n, rd));
+            a = max(a, 0.0005);
+            d += (2.0*threshold) / a;
 
-                d += 0.1 / a;
-                step = 0.0;
-                r_prev = 0.0;
-
-                continue;
-            }
-            break;
+            r_prev = 0.0;
+            step = 0.0;
+            error_candidate = 1e8;
+            continue;
         }
 
-        bool overstep = r + r_prev < step;
-        if (omega > 1.0 && overstep) {
+        bool overstep = (omega > 1.0) && (r + r_prev) < step; // step from previous iteration
+        if (overstep) {
             d -= step;
             step = r_prev;
             omega = 1.0;
@@ -573,16 +577,28 @@ Hit march(vec3 ro, vec3 rd) {
             r_prev = r;
         }
 
-        d += abs(step);
+        float error = abs(r) / d;
 
-        if (d > DIST_MAX) break;
+        if (!overstep && error < error_candidate) {
+            d_candidate = d;
+            error_candidate = error;
+            material_candidate = hit.material;
+            target_candidate = hit.world_target;
+        }
+
+        if (!overstep && error < r_pixel) break;
+        if (omega <= 1.0 && r < threshold) break;
+
+        if (d > D_MAX) return Hit(1e8, material_candidate, NULL);
+
+        d += step;
     }
 
 #ifdef DEBUG
-    d = is;
+    return Hit(is, material_candidate, target_candidate);
 #endif
 
-    return Hit(d, hit.material, hit.world_target);
+    return Hit(d_candidate, material_candidate, target_candidate);
 }
 
 vec3 normal(vec3 p) {
@@ -728,7 +744,7 @@ void main() {
     vec3 color_bg = get_bg(world_ray);
     vec3 color = color_bg;
 
-    if (hit.d < DIST_MAX) {
+    if (hit.d < D_MAX) {
         vec3 p = ro + hit.d * rd;
         vec3 n = normal(p);
         vec3 v = normalize(ro - p);
@@ -748,7 +764,7 @@ void main() {
         color = direct + ambient;
     }
 
-    float fog_factor = smoothstep(DIST_MAX * 0.9, DIST_MAX, hit.d);
+    float fog_factor = smoothstep(D_MAX * 0.9, D_MAX, hit.d);
     color = mix(color, color_bg, fog_factor);
 
     color = pow(color, vec3(1.0 / 2.2)); // gamma correction
