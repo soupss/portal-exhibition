@@ -534,7 +534,7 @@ Hit march(vec3 ro, vec3 rd) {
     float d = 0.0;
     Hit hit;
     float r_prev = 0.0;
-    float omega = 1.2;
+    float omega = 1.6;
     float step = 0.0;
 
     float d_candidate = 0.0;
@@ -557,8 +557,8 @@ Hit march(vec3 ro, vec3 rd) {
             world_ray = hit.world_target;
             vec3 n = get_portal(world_ray)[1];
             float a = abs(dot(n, rd));
-            a = max(a, 0.0005);
-            d += (2.0*threshold) / a;
+            a = max(a, 1e-8);
+            d += (20.0*threshold) / a;
 
             r_prev = 0.0;
             step = 0.0;
@@ -571,13 +571,14 @@ Hit march(vec3 ro, vec3 rd) {
             d -= step;
             step = r_prev;
             omega = 1.0;
+            continue;
         }
         else {
             step = r * omega;
             r_prev = r;
         }
 
-        float error = abs(r) / d;
+        float error = r / d;
 
         if (!overstep && error < error_candidate) {
             d_candidate = d;
@@ -586,8 +587,8 @@ Hit march(vec3 ro, vec3 rd) {
             target_candidate = hit.world_target;
         }
 
-        if (!overstep && error < r_pixel) break;
-        if (omega <= 1.0 && r < threshold) break;
+        if (!overstep && error < r_pixel && hit.material.type != MATERIAL_TYPE_PORTAL) break;
+        if (r < threshold) break;
 
         if (d > D_MAX) return Hit(1e8, material_candidate, NULL);
 
@@ -597,6 +598,10 @@ Hit march(vec3 ro, vec3 rd) {
 #ifdef DEBUG
     return Hit(is, material_candidate, target_candidate);
 #endif
+
+    if (error_candidate > r_pixel * 1.5) {
+        return Hit(1e8, material_candidate, NULL);
+    }
 
     return Hit(d_candidate, material_candidate, target_candidate);
 }
@@ -751,7 +756,7 @@ void main() {
 
         vec3 light_pos = vec3(0.0, 5.0, 0.0);
         vec3 light_color = vec3(1.0, 1.0, 1.0);
-        Light lamp = Light(light_pos, light_color, 1000.0);
+        Light lamp = Light(light_pos, light_color, 1500.0);
         vec3 direct = lighting(p, n, v, lamp, hit.material);
 
         vec3 l = normalize(light_pos - p);
