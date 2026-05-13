@@ -5,12 +5,74 @@
         <title>Project</title>
         <style>
 body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-canvas { display: block; width: 100vw; height: 100vh; }
+#canvas {
+    display: block; width: 100vw; height: 100vh;
+}
+#fps-counter {
+    position : absolute;
+    top : 10px;
+    left : 10px;
+    color : #00FF00;
+    font-family : monospace;
+    font-size : 18px;
+    pointer-events : none;
+    z-index : 9999;
+    text-shadow : 1px 1px 2px black;
+}
+#fps-graph {
+    position: absolute;
+    top: 35px;
+    left: 10px;
+    pointer-events: none;
+    z-index: 9999;
+}
         </style>
     </head>
     <body>
+        <div id="fps-counter">0</div>
+        <canvas id="fps-graph" width="400" height="300"></canvas>
         <canvas id="canvas"></canvas>
         <script>
+            window.fps_list = [];
+
+            const graph_canvas = document.getElementById('fps-graph');
+            const ctx = graph_canvas.getContext('2d');
+
+            function drawGraph() {
+                ctx.clearRect(0, 0, graph_canvas.width, graph_canvas.height);
+
+                const list = window.fps_list;
+                if (list.length > 1) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#00FF00';
+                    ctx.lineWidth = 2;
+
+                    const maxFps = 70;
+                    const timeWindow = 20.0;
+                    const t_newest = list[list.length - 1][1];
+
+                    for (let i = 0; i < list.length; i++) {
+                        const fps = list[i][0];
+                        const t = list[i][1];
+
+                        const age = t_newest - t;
+                        const x = graph_canvas.width - ((age / timeWindow) * graph_canvas.width);
+                        const y = graph_canvas.height - ((fps / maxFps) * graph_canvas.height);
+
+                        if (i === 0) {
+                            ctx.moveTo(x, y);
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
+                    }
+                    ctx.stroke();
+                }
+
+                requestAnimationFrame(drawGraph);
+            }
+
+            requestAnimationFrame(drawGraph);
+
             var Module = {
                 onRuntimeInitialized: function() {
                     const ws = new WebSocket('ws://localhost:3000');
