@@ -664,7 +664,7 @@ int main() {
     double t_start_sec = emscripten_date_now()/1000.0;
     s->t_start = (float)fmod(t_start_sec, 10000);
 
-    s->camera.pos = (Vec3){.x = 0.0, .y = 3.5, .z = 10.0};
+    s->camera.pos = (Vec3){.x = 0.0, .y = 7.0, .z = 20.0};
     s->camera.right = (Vec3){.x = 1.0, .y = 0.0, .z = 0.0};
     s->camera.forward = (Vec3){.x = 0.0, .y = 0.0, .z = -1.0};
     s->camera.up = (Vec3){.x = 0.0, .y = 1.0, .z = 0.0};
