@@ -1,32 +1,5 @@
 #version 450
 
-// #define DEBUG
-
-#define NULL -1
-
-#define WORLD_HUB 0
-#define WORLD_SUB_FRACTAL 1
-#define WORLD_SUB_LAVALAMP 2
-#define WORLD_SUB_MOUNTAINS 3
-
-#define NUM_PORTALS 3
-
-const int SUB_WORLDS[NUM_PORTALS] = {
-    WORLD_SUB_LAVALAMP,
-    WORLD_SUB_FRACTAL,
-    WORLD_SUB_MOUNTAINS
-};
-
-#define MATERIAL_TYPE_OPAQUE 0
-#define MATERIAL_TYPE_PORTAL 1
-
-#define PI 3.1415926535897932384626433832795
-#define D_MAX 150
-#define STEPS_MAX 256
-
-#define PORTAL_WIDTH 2.3
-#define PORTAL_HEIGHT 3.7
-
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(rgba8, set = 0, binding = 0) uniform writeonly image2D rendertarget;
@@ -34,6 +7,38 @@ layout(rgba8, set = 0, binding = 0) uniform writeonly image2D rendertarget;
 layout(set = 0, binding = 1, std430) buffer state {
     int world_global;
 };
+
+
+// #define DEBUG
+
+#define NULL -1
+
+#define WORLD_HUB 0
+#define WORLD_SUB_FRACTAL 1
+#define WORLD_SUB_LAVALAMP 2
+#define WORLD_SUB_MOUNTAIN 3
+#define WORLD_SUB_WATER 4
+#define WORLD_SUB_CLOUD 5
+
+#define NUM_PORTALS 5
+const int SUB_WORLDS[NUM_PORTALS] = {
+    WORLD_SUB_LAVALAMP,
+    WORLD_SUB_FRACTAL,
+    WORLD_SUB_MOUNTAIN,
+    WORLD_SUB_WATER,
+    WORLD_SUB_CLOUD
+};
+
+#define MATERIAL_TYPE_OPAQUE 0
+#define MATERIAL_TYPE_PORTAL 1
+
+#define PI 3.1415926535897932384626433832795
+#define D_MAX 150 //TODO: custom for each world
+#define STEPS_MAX 256
+
+#define PORTAL_WIDTH 2.3
+#define PORTAL_HEIGHT 3.7
+
 
 int world_ray;
 
@@ -51,6 +56,7 @@ layout(set = 1, binding = 0, std140) uniform frame {
     Camera camera;
     vec3 camera_pos_prev;
 } u;
+
 
 struct Material {
     int type;
@@ -72,6 +78,7 @@ struct Hit {
 };
 
 #define NULL_HIT Hit(0.0, Material(MATERIAL_TYPE_OPAQUE, vec3(1.0, 0.0, 1.0), 0.0, 0.0), NULL)
+
 
 float sd_sphere(vec3 p, float r) {
     return length(p) - r;
@@ -116,45 +123,45 @@ float sd_portal(vec3 p, vec3 n) {
 }
 
 // TODO: avoid trig in N functions
-float N(float k) {
+float hash(float k) {
     return fract(sin(k * 12.9898) * 43758.5453123);
 }
 
-float N31(vec3 p3) {
+float hash31(vec3 p3) {
     p3  = fract(p3 * .1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
-float N21(vec2 p) {
+float hash21(vec2 p) {
     return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
 }
 
-vec3 N23(vec2 p) {
+vec3 hash23(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
     p3 += dot(p3, p3.yxz + 33.33);
     return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
-vec2 N22(vec2 p) {
+vec2 hash22(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xx + p3.yz) * p3.zy) * 2.0 - 1.0;
 }
 
-vec2 N12(float p) {
+vec2 hash12(float p) {
     vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xx + p3.yz) * p3.zy);
 }
 
-vec3 N13(float p) {
+vec3 hash13(float p) {
     vec3 p3 = fract(vec3(p) * vec3(.1031, .1030, .0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
-vec3 N33(vec3 p3) {
+vec3 hash33(vec3 p3) {
     p3 = fract(p3 * vec3(.1031, .1030, .0973));
     p3 += dot(p3, p3.yxz+33.33);
     return 2.0*fract((p3.xxy + p3.yxx)*p3.zyx) - 1.0;
@@ -184,14 +191,14 @@ float value_noise(vec3 p) {
 
     lp = smootherstep(0.0, 1.0, lp);
 
-    float n000 = N31(id);
-    float n100 = N31(id + vec3(1.0, 0.0, 0.0));
-    float n010 = N31(id + vec3(0.0, 1.0, 0.0));
-    float n110 = N31(id + vec3(1.0, 1.0, 0.0));
-    float n001 = N31(id + vec3(0.0, 0.0, 1.0));
-    float n101 = N31(id + vec3(1.0, 0.0, 1.0));
-    float n011 = N31(id + vec3(0.0, 1.0, 1.0));
-    float n111 = N31(id + vec3(1.0, 1.0, 1.0));
+    float n000 = hash31(id);
+    float n100 = hash31(id + vec3(1.0, 0.0, 0.0));
+    float n010 = hash31(id + vec3(0.0, 1.0, 0.0));
+    float n110 = hash31(id + vec3(1.0, 1.0, 0.0));
+    float n001 = hash31(id + vec3(0.0, 0.0, 1.0));
+    float n101 = hash31(id + vec3(1.0, 0.0, 1.0));
+    float n011 = hash31(id + vec3(0.0, 1.0, 1.0));
+    float n111 = hash31(id + vec3(1.0, 1.0, 1.0));
 
     return mix(mix(mix(n000, n100, lp.x), mix(n010, n110, lp.x), lp.y),
              mix(mix(n001, n101, lp.x), mix(n011, n111, lp.x), lp.y), lp.z);
@@ -203,10 +210,10 @@ float noise_gradient(vec2 p) {
 
     vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
-    vec2 g00 = N22(i + vec2(0.0, 0.0));
-    vec2 g10 = N22(i + vec2(1.0, 0.0));
-    vec2 g01 = N22(i + vec2(0.0, 1.0));
-    vec2 g11 = N22(i + vec2(1.0, 1.0));
+    vec2 g00 = hash22(i + vec2(0.0, 0.0));
+    vec2 g10 = hash22(i + vec2(1.0, 0.0));
+    vec2 g01 = hash22(i + vec2(0.0, 1.0));
+    vec2 g11 = hash22(i + vec2(1.0, 1.0));
 
     float d00 = dot(g00, f - vec2(0.0, 0.0));
     float d10 = dot(g10, f - vec2(1.0, 0.0));
@@ -267,12 +274,20 @@ mat2x3 get_portal(int world) {
         n = vec3(-1.0, 0.0, 0.0);
     }
     else if (world == WORLD_SUB_FRACTAL) {
-        pos = vec3(-5.0, 4.0, 8.660254);
-        n = vec3(0.5, 0.0, -0.8660254);
+        pos = vec3(3.09017, 4.0, 9.51057);
+        n = vec3(-0.309017, 0.0, -0.951057);
     }
-    else if (world == WORLD_SUB_MOUNTAINS) {
-        pos = vec3(-5.0, 4.0, -8.660254);
-        n = vec3(0.5, 0.0, 0.8660254);
+    else if (world == WORLD_SUB_MOUNTAIN) {
+        pos = vec3(-8.09017, 4.0, 5.87785);
+        n = vec3(0.809017, 0.0, -0.587785);
+    }
+    else if (world == WORLD_SUB_WATER) {
+        pos = vec3(-8.09017, 4.0, -5.87785);
+        n = vec3(0.809017, 0.0, 0.587785);
+    }
+    else if (world == WORLD_SUB_CLOUD) {
+        pos = vec3(3.09017, 4.0, -9.51057);
+        n = vec3(-0.309017, 0.0, 0.951057);
     }
     else {
         pos = vec3(0.0);
@@ -314,6 +329,24 @@ bool portal_entered(int world) {
     return false;
 }
 
+Hit h_portal(vec3 p, int world_src, int world_dst) {
+    mat2x3 portal;
+    float n_dir = 1.0;
+    if (world_src == WORLD_HUB) portal = get_portal(world_dst);
+    else {
+        portal = get_portal(world_src);
+        n_dir *= -1.0;
+    };
+
+    vec3 portal_pos = portal[0];
+    vec3 portal_n = n_dir * portal[1];
+
+    vec3 q = p - portal_pos;
+    float d = sd_portal(q, portal_n);
+    Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
+    return Hit(d, m, world_dst);
+}
+
 // get world camera is in
 int get_world() {
     if (world_global == WORLD_HUB) {
@@ -332,9 +365,12 @@ int get_world() {
 
 vec3 get_bg(int world) {
     if (world == WORLD_HUB) return vec3(1.0);
-    else if (world == WORLD_SUB_MOUNTAINS) return vec3(0.53, 0.81, 0.92);
+    else if (world == WORLD_SUB_MOUNTAIN) return vec3(0.53, 0.81, 0.92);
+    else if (world == WORLD_SUB_WATER) return 0.5*vec3(0.53, 0.81, 0.92);
     else return vec3(0.0);
 }
+
+// TODO: get_light
 
 Hit map_hub_s(vec3 p) {
     Hit hit;
@@ -348,41 +384,12 @@ Hit map_hub_s(vec3 p) {
 
 Hit map_hub_p(vec3 p) {
     Hit hit = map_hub_s(p);
-    {
-        // portal to fractal world
-        mat2x3 portal = get_portal(WORLD_SUB_FRACTAL);
-        vec3 portal_pos = portal[0];
-        vec3 portal_n = portal[1];
-
-        vec3 q = p - portal_pos;
-        float d = sd_portal(q, portal_n);
-        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
-        hit = u_op(hit, Hit(d, m, WORLD_SUB_FRACTAL));
+    for (int i = 0; i < NUM_PORTALS; i++) {
+        int world = SUB_WORLDS[i];
+        Hit h = h_portal(p, WORLD_HUB, world);
+        hit = u_op(hit, h);
     }
 
-    {
-        // portal to lavalamp world
-        mat2x3 portal = get_portal(WORLD_SUB_LAVALAMP);
-        vec3 portal_pos = portal[0];
-        vec3 portal_n = portal[1];
-
-        vec3 q = p - portal_pos;
-        float d = sd_portal(q, portal_n);
-        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
-        hit = u_op(hit, Hit(d, m, WORLD_SUB_LAVALAMP));
-    }
-
-    {
-        // portal to mountains world
-        mat2x3 portal = get_portal(WORLD_SUB_MOUNTAINS);
-        vec3 portal_pos = portal[0];
-        vec3 portal_n = portal[1];
-
-        vec3 q = p - portal_pos;
-        float d = sd_portal(q, portal_n);
-        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
-        hit = u_op(hit, Hit(d, m, WORLD_SUB_MOUNTAINS));
-    }
     return hit;
 }
 
@@ -455,16 +462,7 @@ Hit map_fractal_s(vec3 p) {
 
 Hit map_fractal_p(vec3 p) {
     Hit hit = map_fractal_s(p);
-    {
-        mat2x3 portal = get_portal(WORLD_SUB_FRACTAL);
-        vec3 portal_pos = portal[0];
-        vec3 portal_n = -portal[1];
-
-        vec3 q = p - portal_pos;
-        float d = sd_portal(q, portal_n);
-        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
-        hit = u_op(hit, Hit(d, m, WORLD_HUB));
-    }
+    hit = u_op(hit, h_portal(p, WORLD_SUB_FRACTAL, WORLD_HUB));
     return hit;
 }
 
@@ -473,16 +471,15 @@ Hit map_fractal_p(vec3 p) {
 vec3 g_blub_pos[BLUBS];
 float g_blub_r[BLUBS];
 
-// todo: use fract() instead of sin for periodicity
 void precalculate_blobs() {
     float world_height = 20.0;
-    float y = world_height/2.0 + world_height * 0.7 * sin(2.0*PI*N(u.t_start) + u.t * 0.6);
+    float y = world_height/2.0 + world_height * 0.7 * sin(2.0*PI*hash(u.t_start) + u.t * 0.6);
     y = 5.0 + y*0.65;
 
     float r_blob = 3.5;
 
     for (int i = 0; i < BLUBS; i++) {
-        vec3 rand = N23(vec2(u.t_start, float(i)));
+        vec3 rand = hash23(vec2(u.t_start, float(i)));
 
         float r_blub_amp = r_blob*0.5*1.5;
         g_blub_r[i] = r_blob*0.5*(rand.x+0.5);
@@ -495,6 +492,8 @@ void precalculate_blobs() {
     }
 }
 
+//TODO: dont change roof/floor color except blend
+//TODO: more blobs
 Hit map_lavalamp_s(vec3 p) {
     Hit hit;
     hit.world_target = NULL;
@@ -507,6 +506,7 @@ Hit map_lavalamp_s(vec3 p) {
         hit.d = sd_plane(p, vec3(0.0, 1.0, 0.0));
         hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(0.0, 0.0, 1.0), 0.0, 0.0);
     }
+
     // roof
     {
         vec3 q = p - vec3(0.0, world_height, 0.0);
@@ -519,7 +519,7 @@ Hit map_lavalamp_s(vec3 p) {
     {
         vec3 q = p;
 
-        float y = world_height/2.0 + world_height * 0.7 * sin(2.0*PI*N(u.t_start) + u.t * 0.6);
+        float y = world_height/2.0 + world_height * 0.7 * sin(2.0*PI*hash(u.t_start) + u.t * 0.6);
         y = 5.0 + y*0.65;
 
         vec3 q_blob = q - vec3(0.0, y, 0.0);
@@ -543,67 +543,79 @@ Hit map_lavalamp_s(vec3 p) {
 
 Hit map_lavalamp_p(vec3 p) {
     Hit hit = map_lavalamp_s(p);
-    {
-        mat2x3 portal = get_portal(WORLD_SUB_LAVALAMP);
-        vec3 portal_pos = portal[0];
-        vec3 portal_n = -portal[1];
-
-        vec3 q = p - portal_pos;
-        float d = sd_portal(q, portal_n);
-        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
-        hit = u_op(hit, Hit(d, m, WORLD_HUB));
-    }
+    hit = u_op(hit, h_portal(p, WORLD_SUB_LAVALAMP, WORLD_HUB));
     return hit;
 }
 
-Hit map_mountains_s(vec3 p) {
+Hit map_mountain_s(vec3 p) {
+    Hit hit;
+    hit.world_target = NULL;
+    hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(0.8, 0.5, 0.7), 0.9, 0.2);
+
+    p.y += 30;
+
+    float amp = 50.0;
+
+    if (p.y > amp + 5.0) {
+        hit.d = p.y - amp + 5.0;
+        return hit;
+    }
+
+    vec2 offset = hash12(u.t_start);
+    int octaves = int(6.0 - floor(length(p - u.camera.pos)/60.0));
+    float h = fbm(offset + p.xz * 0.02, octaves);
+    h *= 50.0;
+    hit.d = p.y - h;
+    hit.d *= 0.2;
+
+    return hit;
+}
+
+Hit map_mountain_p(vec3 p) {
+    Hit hit = map_mountain_s(p);
+    hit = u_op(hit, h_portal(p, WORLD_SUB_MOUNTAIN, WORLD_HUB));
+    return hit;
+}
+
+Hit map_water_s(vec3 p) {
     Hit hit;
     hit.world_target = NULL;
 
-    float amp = 100.0;
+    vec3 q = p + 20.0;
 
-    p.y += 0.3*amp;
-    {
-        vec3 q = p;
-        vec2 offset = N12(u.t_start);
-        float h = fbm(offset + q.xz * 0.02, 7);
+    float h = 3.0*sin(0.3*q.x + u.t);
 
-        h *= amp;
+    hit.d = q.y - h;
+    hit.d *= 0.4;
 
-        float w = 0.0;
-        {
-            float w_speed = u.t;
-            float w_freq = 0.2*q.x;
-            float w_amp = 4.0;
-            for (int i = 0; i < 1; i++) {
-                w += w_amp*-abs(sin(w_speed+w_freq));
-                // w_speed *= 1.5;
-                w_freq *= 1.5;
-                w_amp *= 0.3;
-            }
-        }
-
-        h = max(w, h);
-        hit.d = p.y - h;
-        hit.d *= 0.1;
-
-        hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(0.0, 0.0, 1.0), 0.9, 0.2);
-    }
+    hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(0.0, 0.0, 1.0), 0.0, 0.0);
     return hit;
 }
 
-Hit map_mountains_p(vec3 p) {
-    Hit hit = map_mountains_s(p);
-    {
-        mat2x3 portal = get_portal(WORLD_SUB_MOUNTAINS);
-        vec3 portal_pos = portal[0]; //TODO: pos
-        vec3 portal_n = -portal[1];
+Hit map_water_p(vec3 p) {
+    Hit hit = map_water_s(p);
+    hit = u_op(hit, h_portal(p, WORLD_SUB_WATER, WORLD_HUB));
+    return hit;
+}
 
-        vec3 q = p - portal_pos;
-        float d = sd_portal(q, portal_n);
-        Material m = Material(MATERIAL_TYPE_PORTAL, vec3(1.0), 0.0, 0.0);
-        hit = u_op(hit, Hit(d, m, WORLD_HUB));
+Hit map_cloud_s(vec3 p) {
+    Hit hit;
+    hit.world_target = NULL;
+
+    {
+        vec3 q = p - vec3(15.0, 10.0, -30.0);
+        float d = sd_sphere(q, 10.0) + 0.2*sin(5.0*q.x + 3.0*q.z - 10.0*q.y - u.t);
+
+        hit.d = d * 0.2;
+        hit.material = Material(MATERIAL_TYPE_OPAQUE, vec3(1.0), 0.0, 0.0);
     }
+
+    return hit;
+}
+
+Hit map_cloud_p(vec3 p) {
+    Hit hit = map_cloud_s(p);
+    hit = u_op(hit, h_portal(p, WORLD_SUB_CLOUD, WORLD_HUB));
     return hit;
 }
 
@@ -612,7 +624,9 @@ Hit map_secondary(vec3 p) {
     if (world_ray == WORLD_HUB) return map_hub_s(p);
     else if (world_ray == WORLD_SUB_FRACTAL) return map_fractal_s(p);
     else if (world_ray == WORLD_SUB_LAVALAMP) return map_lavalamp_s(p);
-    else if (world_ray == WORLD_SUB_MOUNTAINS) return map_mountains_s(p);
+    else if (world_ray == WORLD_SUB_MOUNTAIN) return map_mountain_s(p);
+    else if (world_ray == WORLD_SUB_WATER) return map_water_s(p);
+    else if (world_ray == WORLD_SUB_CLOUD) return map_cloud_s(p);
     else return NULL_HIT;
 }
 
@@ -621,7 +635,9 @@ Hit map_primary(vec3 p) {
     if (world_ray == WORLD_HUB) return map_hub_p(p);
     else if (world_ray == WORLD_SUB_FRACTAL) return map_fractal_p(p);
     else if (world_ray == WORLD_SUB_LAVALAMP) return map_lavalamp_p(p);
-    else if (world_ray == WORLD_SUB_MOUNTAINS) return map_mountains_p(p);
+    else if (world_ray == WORLD_SUB_MOUNTAIN) return map_mountain_p(p);
+    else if (world_ray == WORLD_SUB_WATER) return map_water_p(p);
+    else if (world_ray == WORLD_SUB_CLOUD) return map_cloud_p(p);
     else return NULL_HIT;
 }
 
@@ -875,7 +891,7 @@ void main() {
     color = pow(color, vec3(1.0 / 2.2)); // gamma correction
 
     // dithering to reduce color banding
-    float noise = N21(uv + u.t) * 2.0 - 1.0;
+    float noise = hash21(uv + u.t) * 2.0 - 1.0;
     color += noise * (1.0 / 255.0);
 #endif
     imageStore(rendertarget, ivec2(x, y), vec4(color, 1.0));
